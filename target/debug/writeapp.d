@@ -1,0 +1,1 @@
+/home/tim/Projects/abbey-cli/writeapp/target/debug/writeapp: /home/tim/Projects/abbey-cli/writeapp/src/app.rs /home/tim/Projects/abbey-cli/writeapp/src/main.rs /home/tim/Projects/abbey-cli/writeapp/src/storage.rs /home/tim/Projects/abbey-cli/writeapp/src/tui.rs /home/tim/Projects/abbey-cli/writeapp/src/ui.rs
