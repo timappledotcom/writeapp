@@ -61,10 +61,24 @@ fn render_menu(f: &mut Frame, _app: &App, area: Rect) {
 }
 
 fn render_writing(f: &mut Frame, app: &mut App, area: Rect) {
+    // Calculate centered text area with max width for better reading experience
+    let max_width = 100u16;
+    let target_width = if area.width > max_width { max_width } else { area.width };
+    let horizontal_padding = (area.width.saturating_sub(target_width)) / 2;
+    
+    // Create centered layout with status bar at bottom
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(area);
+
+    // Define the centered text area
+    let text_area = Rect {
+        x: chunks[0].x + horizontal_padding,
+        y: chunks[0].y + 1, // Add 1 line of breathing room at the top
+        width: target_width,
+        height: chunks[0].height.saturating_sub(2), // Leave room at bottom
+    };
 
     if app.preview_mode_active {
          let text_content = app.textarea.lines().join("\n");
@@ -74,15 +88,12 @@ fn render_writing(f: &mut Frame, app: &mut App, area: Rect) {
          let p = Paragraph::new(formatted_lines)
             .wrap(ratatui::widgets::Wrap { trim: false })
             .block(block);
-         f.render_widget(p, chunks[0]);
+         f.render_widget(p, text_area);
          
     } else {
-        // Edit Mode
-        app.textarea.set_block(
-            Block::default()
-            .borders(Borders::ALL)
-            .title(" Writing ")
-        );
+        // Edit Mode - Minimalist: No block borders
+        app.textarea.set_block(Block::default());
+        
         // Use Focus Mode styles if active
         if app.focus_mode_active {
             app.textarea.set_style(Style::default().fg(Color::DarkGray));
@@ -92,7 +103,7 @@ fn render_writing(f: &mut Frame, app: &mut App, area: Rect) {
             app.textarea.set_cursor_line_style(Style::default()); 
         }
         
-        f.render_widget(&app.textarea, chunks[0]);
+        f.render_widget(&app.textarea, text_area);
     }
 
     let count = app.textarea.lines().join(" ").split_whitespace().count();
