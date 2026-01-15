@@ -15,6 +15,7 @@ pub struct FlowEntry {
 pub struct Settings {
     pub default_extension: String,
     pub storage_path: String,
+    pub vim_mode: bool,
 }
 
 impl Default for Settings {
@@ -32,6 +33,7 @@ impl Default for Settings {
         Self {
             default_extension: "txt".to_string(),
             storage_path,
+            vim_mode: false,
         }
     }
 }
@@ -150,6 +152,14 @@ impl Storage {
         let path = dir.join(filename);
         let content = fs::read_to_string(path)?;
         Ok(content)
+    }
+
+    pub fn rename_draft(old_name: &str, new_name: &str) -> Result<()> {
+        let dir = Self::get_content_dir()?.join("drafts");
+        let old_path = dir.join(old_name);
+        let new_path = dir.join(new_name);
+        fs::rename(old_path, new_path)?;
+        Ok(())
     }
 
     pub fn delete_draft(filename: &str) -> Result<()> {

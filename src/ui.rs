@@ -1,10 +1,10 @@
-use crate::app::{App, Mode};
+use crate::app::{App, Mode, EditorMode, PopupAction};
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Clear},
     Frame,
 };
 
@@ -18,6 +18,15 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         Mode::FlowHistory => render_history(f, app, area),
         Mode::Settings => render_settings(f, app, area),
         Mode::Drafts => render_drafts(f, app, area),
+        Mode::PopupInput => {
+             // Render whatever is behind? Usually writing or Drafts.
+             // We need to know previous mode, but app only has current mode.
+             // Simplification: Just render the popup on blank or basic bg.
+             // Better: Render Writing as background if action suggests selection.
+             // Render Drafts if action suggests rename.
+             // For now, just render popup centered.
+             render_popup(f, app, area);
+        }
     }
 
     // Overlay message
@@ -87,8 +96,33 @@ fn render_writing(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let count = app.textarea.lines().join(" ").split_whitespace().count();
-    let status = format!(" Words: {} | Esc: Menu | Ctrl+S: Save | Ctrl+F: Focus | Ctrl+P: Preview", count);
+    let mut status_parts = vec![format!("Words: {}", count)];
+    
+    if app.settings.vim_mode {
+        let mode_str = match app.editor_mode {
+            EditorMode::Normal => "NORMAL",
+            EditorMode::Insert => "INSERT",
+            EditorMode::Visual => "VISUAL",
+        };
+        status_parts.push(glue_mode_status(mode_str));
+    }
+    
+    status_parts.push("Esc: Menu | Ctrl+S: Save".to_string());
+    
+    if app.settings.vim_mode && app.editor_mode == EditorMode::Visual {
+         status_parts.push("n: New Draft | y: Yank".to_string());
+    } else if app.settings.vim_mode && app.editor_mode == EditorMode::Normal {
+         status_parts.push("Ctrl+R: Rename".to_string());
+    } else {
+         status_parts.push("Ctrl+R: Rename | Ctrl+F: Focus | Ctrl+P: Preview".to_string());
+    }
+
+    let status = status_parts.join(" | ");
     f.render_widget(Paragraph::new(status).style(Style::default().fg(Color::DarkGray)), chunks[1]);
+}
+
+fn glue_mode_status(mode: &str) -> String {
+    format!("[{}]", mode)
 }
 
 fn render_flow(f: &mut Frame, app: &mut App, area: Rect) {
@@ -173,6 +207,7 @@ fn render_drafts(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
     // Basic settings display
     let _extension_label = if app.settings.default_extension == "txt" { "(txt)" } else { "(md)" };
+    let vim_status = if app.settings.vim_mode { "Enabled" } else { "Disabled" };
     
     let output = vec![
         Line::from(vec![Span::raw(" Settings ").bold()]),
@@ -180,6 +215,10 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
         Line::from(vec![
             Span::raw(" [e] Default Extension: "),
             Span::raw(app.settings.default_extension.clone()).bold().fg(Color::Yellow),
+        ]),
+        Line::from(vec![
+            Span::raw(" [v] Vim Mode: "),
+            Span::raw(vim_status).bold().fg(if app.settings.vim_mode { Color::Green } else { Color::Red }),
         ]),
         Line::from(vec![
             Span::raw(" Storage Path: "),
@@ -255,4 +294,44 @@ fn parse_markdown_to_lines(input: &str) -> Vec<Line<'static>> {
         lines.push(Line::from(current_spans));
     }
     lines
+}
+
+fn render_popup(f: &mut Frame, app: &mut App, area: Rect) {
+    let block = Block::default().title("Popup").borders(Borders::ALL);
+    let popup_area = centered_rect(60, 20, area);
+    
+    f.render_widget(Clear, popup_area);
+    
+    let title = match &app.popup_action {
+        PopupAction::RenameDraft(_) => "Rename Draft (Enter new name)",
+        PopupAction::NewDraftFromSelection(_) => "New Draft Name",
+        _ => "Input",
+    };
+
+    app.popup_textarea.set_block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title),
+    );
+    f.render_widget(&app.popup_textarea, popup_area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
