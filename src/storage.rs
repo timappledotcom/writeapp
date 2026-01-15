@@ -16,6 +16,9 @@ pub struct Settings {
     pub default_extension: String,
     pub storage_path: String,
     pub vim_mode: bool,
+    pub show_splash_screen: bool,
+    pub last_seen_version: String,
+    pub spellcheck_enabled: bool,
 }
 
 impl Default for Settings {
@@ -34,6 +37,9 @@ impl Default for Settings {
             default_extension: "txt".to_string(),
             storage_path,
             vim_mode: false,
+            show_splash_screen: true,
+            last_seen_version: String::new(),
+            spellcheck_enabled: true,
         }
     }
 }

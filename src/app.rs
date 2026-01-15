@@ -1,4 +1,5 @@
 use crate::storage::{self, FlowEntry, Settings};
+use crate::spellcheck::SpellChecker;
 use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
@@ -10,6 +11,7 @@ const HARD_WRAP_LIMIT: usize = 90;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Mode {
+    Splash,
     Menu,
     Writing,
     Flow,
@@ -17,6 +19,7 @@ pub enum Mode {
     Settings,
     Drafts,
     PopupInput,
+    SpellCheck,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -47,6 +50,10 @@ pub struct App<'a> {
     pub preview_mode_active: bool,
     pub settings: Settings,
     
+    // Splash screen
+    pub splash_start: Option<Instant>,
+    pub version: &'static str,
+    
     // Drafts
     pub drafts: Vec<String>,
     pub drafts_state: ListState,
@@ -59,6 +66,8 @@ pub struct App<'a> {
     pub history: Vec<FlowEntry>,
     pub message: Option<String>,
     pub message_time: Option<Instant>,
+    pub spellchecker: SpellChecker,
+    pub misspelled_words: Vec<String>,
 }
 
 impl<'a> Default for App<'a> {
@@ -73,12 +82,18 @@ impl<'a> Default for App<'a> {
 
         let settings = storage::Storage::load_settings().unwrap_or_default();
         let editor_mode = if settings.vim_mode { EditorMode::Normal } else { EditorMode::Insert };
+        let current_version = env!("CARGO_PKG_VERSION");
+        
+        // Show splash if enabled OR if version has changed (upgrade)
+        let should_show_splash = settings.show_splash_screen || settings.last_seen_version != current_version;
+        let mode = if should_show_splash { Mode::Splash } else { Mode::Menu };
+        let splash_start = if should_show_splash { Some(Instant::now()) } else { None };
 
         Self {
             preview_mode_active: false,
             focus_mode_active: false,
             settings,
-            mode: Mode::Menu,
+            mode,
             editor_mode,
             popup_action: PopupAction::None,
             popup_textarea: popup,
@@ -94,6 +109,10 @@ impl<'a> Default for App<'a> {
             current_draft_name: None,
             message: None,
             message_time: None,
+            splash_start,
+            version: current_version,
+            spellchecker: SpellChecker::default(),
+            misspelled_words: Vec::new(),
         }
     }
 }
@@ -110,6 +129,19 @@ impl<'a> App<'a> {
     }
 
     pub fn tick(&mut self) {
+        // Handle splash screen timeout
+        if self.mode == Mode::Splash {
+            if let Some(start) = self.splash_start {
+                if start.elapsed() >= Duration::from_secs(30) {
+                    self.mode = Mode::Menu;
+                    self.splash_start = None;
+                    // Update last seen version after showing splash
+                    self.settings.last_seen_version = self.version.to_string();
+                    let _ = storage::Storage::save_settings(&self.settings);
+                }
+            }
+        }
+        
         if self.mode == Mode::Flow {
             if let Some(start) = self.flow_start {
                 let elapsed = start.elapsed();
@@ -174,6 +206,14 @@ impl<'a> App<'a> {
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         match self.mode {
+            Mode::Splash => {
+                // Any key press skips the splash screen
+                self.mode = Mode::Menu;
+                self.splash_start = None;
+                // Update last seen version after showing splash
+                self.settings.last_seen_version = self.version.to_string();
+                let _ = storage::Storage::save_settings(&self.settings);
+            }
             Mode::Menu => match key.code {
                 KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Char('f') => self.start_flow(10), // Default 10
@@ -345,6 +385,25 @@ impl<'a> App<'a> {
                         self.set_message(format!("Error saving settings: {}", e));
                     }
                 }
+                KeyCode::Char('s') => {
+                     self.settings.show_splash_screen = !self.settings.show_splash_screen;
+                     if let Err(e) = storage::Storage::save_settings(&self.settings) {
+                        self.set_message(format!("Error saving settings: {}", e));
+                    }
+                }
+                KeyCode::Char('c') => {
+                     self.settings.spellcheck_enabled = !self.settings.spellcheck_enabled;
+                     if let Err(e) = storage::Storage::save_settings(&self.settings) {
+                        self.set_message(format!("Error saving settings: {}", e));
+                    }
+                }
+                _ => {}
+            },
+            Mode::SpellCheck => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.mode = Mode::Writing;
+                    self.misspelled_words.clear();
+                }
                 _ => {}
             },
             Mode::Writing => {
@@ -375,6 +434,15 @@ impl<'a> App<'a> {
                          self.preview_mode_active = !self.preview_mode_active;
                          let msg = if self.preview_mode_active { "Preview ON" } else { "Preview OFF" };
                          self.set_message(msg);
+                    }
+                    KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                         if self.settings.spellcheck_enabled {
+                             let text = self.textarea.lines().join("\n");
+                             let misspelled_set = self.spellchecker.check_text(&text);
+                             self.misspelled_words = misspelled_set.into_iter().collect();
+                             self.misspelled_words.sort();
+                             self.mode = Mode::SpellCheck;
+                         }
                     }
                     KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         // Rename current

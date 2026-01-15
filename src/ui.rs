@@ -12,12 +12,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
     match app.mode {
+        Mode::Splash => render_splash(f, app, area),
         Mode::Menu => render_menu(f, app, area),
         Mode::Writing => render_writing(f, app, area),
         Mode::Flow => render_flow(f, app, area),
         Mode::FlowHistory => render_history(f, app, area),
         Mode::Settings => render_settings(f, app, area),
         Mode::Drafts => render_drafts(f, app, area),
+        Mode::SpellCheck => render_spellcheck(f, app, area),
         Mode::PopupInput => {
              // Render whatever is behind? Usually writing or Drafts.
              // We need to know previous mode, but app only has current mode.
@@ -37,6 +39,41 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             .style(Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD));
         f.render_widget(p, msg_rect);
     }
+}
+
+fn render_splash(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::layout::Alignment;
+    
+    let output = vec![
+        Line::from(""),
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("WriteApp", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(format!("v{}", app.version), Style::default().fg(Color::DarkGray))
+        ]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Created by "),
+            Span::styled("Tim Apple", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("timapple.com", Style::default().fg(Color::Blue).add_modifier(Modifier::ITALIC)),
+        ]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Press any key to continue...", Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM))
+        ]),
+    ];
+
+    let p = Paragraph::new(output)
+        .alignment(Alignment::Center);
+    f.render_widget(p, area);
 }
 
 fn render_menu(f: &mut Frame, _app: &App, area: Rect) {
@@ -125,7 +162,7 @@ fn render_writing(f: &mut Frame, app: &mut App, area: Rect) {
     } else if app.settings.vim_mode && app.editor_mode == EditorMode::Normal {
          status_parts.push("Ctrl+R: Rename".to_string());
     } else {
-         status_parts.push("Ctrl+R: Rename | Ctrl+F: Focus | Ctrl+P: Preview".to_string());
+         status_parts.push("Ctrl+R: Rename | Ctrl+F: Focus | Ctrl+P: Preview | Ctrl+L: Spell Check".to_string());
     }
 
     let status = status_parts.join(" | ");
@@ -219,6 +256,8 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
     // Basic settings display
     let _extension_label = if app.settings.default_extension == "txt" { "(txt)" } else { "(md)" };
     let vim_status = if app.settings.vim_mode { "Enabled" } else { "Disabled" };
+    let splash_status = if app.settings.show_splash_screen { "Enabled" } else { "Disabled" };
+    let spellcheck_status = if app.settings.spellcheck_enabled { "Enabled" } else { "Disabled" };
     
     let output = vec![
         Line::from(vec![Span::raw(" Settings ").bold()]),
@@ -232,6 +271,15 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             Span::raw(vim_status).bold().fg(if app.settings.vim_mode { Color::Green } else { Color::Red }),
         ]),
         Line::from(vec![
+            Span::raw(" [s] Splash Screen: "),
+            Span::raw(splash_status).bold().fg(if app.settings.show_splash_screen { Color::Green } else { Color::Red }),
+        ]),
+        Line::from("(Splash always shows on version upgrades)"),
+        Line::from(vec![
+            Span::raw(" [c] Spell Check: "),
+            Span::raw(spellcheck_status).bold().fg(if app.settings.spellcheck_enabled { Color::Green } else { Color::Red }),
+        ]),
+        Line::from(vec![
             Span::raw(" Storage Path: "),
             Span::raw(app.settings.storage_path.clone()).italic().fg(Color::Cyan),
         ]),
@@ -243,6 +291,42 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Settings ");
+    let p = Paragraph::new(output).block(block);
+    f.render_widget(p, area);
+}
+
+fn render_spellcheck(f: &mut Frame, app: &App, area: Rect) {
+    let mut output = vec![
+        Line::from(vec![Span::raw(" Spell Check Results ").bold()]),
+        Line::from(""),
+    ];
+
+    if app.misspelled_words.is_empty() {
+        output.push(Line::from(vec![
+            Span::styled("✓ No spelling errors found!", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        ]));
+    } else {
+        output.push(Line::from(vec![
+            Span::styled(format!("Found {} potentially misspelled word(s):", app.misspelled_words.len()), 
+                Style::default().fg(Color::Yellow))
+        ]));
+        output.push(Line::from(""));
+        
+        for word in &app.misspelled_words {
+            output.push(Line::from(vec![
+                Span::raw("  • "),
+                Span::styled(word, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            ]));
+        }
+    }
+
+    output.push(Line::from(""));
+    output.push(Line::from(""));
+    output.push(Line::from(" [Esc] Back to Writing"));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Spell Check ");
     let p = Paragraph::new(output).block(block);
     f.render_widget(p, area);
 }

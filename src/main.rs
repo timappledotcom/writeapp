@@ -8,6 +8,7 @@ mod app;
 mod storage;
 mod tui;
 mod ui;
+mod spellcheck;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
